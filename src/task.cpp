@@ -9,8 +9,10 @@
 namespace {
 
 void swapRows(std::vector<double>& matrix, std::size_t n, std::size_t first, std::size_t second) {
+    double* firstRow = matrix.data() + first * n;
+    double* secondRow = matrix.data() + second * n;
     for (std::size_t j = 0; j < n; ++j) {
-        std::swap(matrix[first * n + j], matrix[second * n + j]);
+        std::swap(firstRow[j], secondRow[j]);
     }
 }
 
@@ -23,16 +25,18 @@ void restoreRowOrder(std::size_t n, std::vector<double>& inverse, const std::vec
             continue;
         }
 
+        const double* startRow = inverse.data() + start * n;
         for (std::size_t j = 0; j < n; ++j) {
-            row[j] = inverse[start * n + j];
+            row[j] = startRow[j];
         }
 
         std::size_t source = start;
         do {
             visited[source] = 1;
             const std::size_t destination = permutation[source];
+            double* destinationRow = inverse.data() + destination * n;
             for (std::size_t j = 0; j < n; ++j) {
-                std::swap(row[j], inverse[destination * n + j]);
+                std::swap(row[j], destinationRow[j]);
             }
             source = destination;
         } while (source != start);
@@ -79,8 +83,9 @@ InversionStatus invertMatrixFullPivot(
         double pivotMagnitude = 0.0;
 
         for (std::size_t i = k; i < n; ++i) {
+            const double* row = matrix.data() + i * n;
             for (std::size_t j = k; j < n; ++j) {
-                const double magnitude = std::abs(matrix[i * n + j]);
+                const double magnitude = std::abs(row[j]);
                 if (!std::isfinite(magnitude)) {
                     return InversionStatus::numerical_failure;
                 }
@@ -103,55 +108,60 @@ InversionStatus invertMatrixFullPivot(
 
         if (pivotColumn != k) {
             for (std::size_t i = 0; i < n; ++i) {
-                std::swap(matrix[i * n + k], matrix[i * n + pivotColumn]);
+                double* row = matrix.data() + i * n;
+                std::swap(row[k], row[pivotColumn]);
             }
             std::swap(columnPermutation[k], columnPermutation[pivotColumn]);
         }
 
-        const double pivot = matrix[k * n + k];
+        double* pivotMatrixRow = matrix.data() + k * n;
+        double* pivotInverseRow = inverse.data() + k * n;
+        const double pivot = pivotMatrixRow[k];
         if (!std::isfinite(pivot) || std::abs(pivot) <= tolerance) {
             return InversionStatus::singular;
         }
 
         for (std::size_t i = k + 1; i < n; ++i) {
-            const double multiplier = matrix[i * n + k] / pivot;
+            double* row = matrix.data() + i * n;
+            double* inverseRow = inverse.data() + i * n;
+            const double multiplier = row[k] / pivot;
             if (!std::isfinite(multiplier)) {
                 return InversionStatus::numerical_failure;
             }
 
             for (std::size_t j = k + 1; j < n; ++j) {
-                const double value = matrix[i * n + j] - multiplier * matrix[k * n + j];
-                if (!std::isfinite(value)) {
-                    return InversionStatus::numerical_failure;
-                }
-                matrix[i * n + j] = value;
+                row[j] -= multiplier * pivotMatrixRow[j];
             }
-            matrix[i * n + k] = 0.0;
+            row[k] = 0.0;
 
             for (std::size_t j = 0; j < n; ++j) {
-                const double value = inverse[i * n + j] - multiplier * inverse[k * n + j];
-                if (!std::isfinite(value)) {
-                    return InversionStatus::numerical_failure;
-                }
-                inverse[i * n + j] = value;
+                inverseRow[j] -= multiplier * pivotInverseRow[j];
             }
         }
     }
 
     for (std::size_t ii = n; ii-- > 0;) {
+        double* inverseRow = inverse.data() + ii * n;
+        const double* row = matrix.data() + ii * n;
+        for (std::size_t r = ii + 1; r < n; ++r) {
+            const double coefficient = row[r];
+            const double* solvedRow = inverse.data() + r * n;
+            for (std::size_t j = 0; j < n; ++j) {
+                inverseRow[j] -= coefficient * solvedRow[j];
+            }
+        }
+
+        const double invDiagonal = 1.0 / row[ii];
         for (std::size_t j = 0; j < n; ++j) {
-            double value = inverse[ii * n + j];
-            for (std::size_t r = ii + 1; r < n; ++r) {
-                value -= matrix[ii * n + r] * inverse[r * n + j];
-            }
-            value /= matrix[ii * n + ii];
-            if (!std::isfinite(value)) {
-                return InversionStatus::numerical_failure;
-            }
-            inverse[ii * n + j] = value;
+            inverseRow[j] *= invDiagonal;
         }
     }
 
     restoreRowOrder(n, inverse, columnPermutation);
+    for (const double value : inverse) {
+        if (!std::isfinite(value)) {
+            return InversionStatus::numerical_failure;
+        }
+    }
     return InversionStatus::success;
 }

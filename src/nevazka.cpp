@@ -1,8 +1,10 @@
 #include "nevazka.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <vector>
 
 bool residualInfinityNorm(
     std::size_t n,
@@ -20,18 +22,26 @@ bool residualInfinityNorm(
     }
 
     norm = 0.0;
+    std::vector<double> productRow(n, 0.0);
     for (std::size_t i = 0; i < n; ++i) {
+        const double* originalRow = original.data() + i * n;
+        std::fill(productRow.begin(), productRow.end(), 0.0);
+
+        for (std::size_t k = 0; k < n; ++k) {
+            const double coefficient = originalRow[k];
+            const double* inverseRow = inverse.data() + k * n;
+            for (std::size_t j = 0; j < n; ++j) {
+                productRow[j] += coefficient * inverseRow[j];
+            }
+        }
+
         double rowSum = 0.0;
         for (std::size_t j = 0; j < n; ++j) {
-            double product = 0.0;
-            for (std::size_t k = 0; k < n; ++k) {
-                product += original[i * n + k] * inverse[k * n + j];
-                if (!std::isfinite(product)) {
-                    return false;
-                }
+            if (!std::isfinite(productRow[j])) {
+                return false;
             }
 
-            const double residual = product - (i == j ? 1.0 : 0.0);
+            const double residual = productRow[j] - (i == j ? 1.0 : 0.0);
             if (!std::isfinite(residual)) {
                 return false;
             }
