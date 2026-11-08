@@ -16,6 +16,10 @@ add_executable(program
 
 target_include_directories(program PRIVATE include)
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+target_link_libraries(program PRIVATE Threads::Threads)
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(program PRIVATE
         -W

@@ -27,8 +27,8 @@ bool parseInteger(const char* text, int& value) {
 }
 
 void printUsage(const char* executable) {
-    std::cerr << "Использование: " << executable << " n m k [filename]\n";
-    std::cerr << "Для k=0 требуется файл с матрицей; для k=1..4 используется формула.\n";
+    std::cerr << "Использование: " << executable << " n m p k [filename]\n";
+    std::cerr << "p - число потоков; для k=0 требуется файл с матрицей; для k=1..4 используется формула.\n";
 }
 
 int fail(const std::string& message) {
@@ -39,22 +39,24 @@ int fail(const std::string& message) {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 4 || argc > 5) {
+    if (argc < 5 || argc > 6) {
         printUsage(argv[0]);
         return 1;
     }
 
     int nArgument = 0;
     int m = 0;
+    int p = 0;
     int k = 0;
-    if (!parseInteger(argv[1], nArgument) || !parseInteger(argv[2], m) || !parseInteger(argv[3], k)) {
+    if (!parseInteger(argv[1], nArgument) || !parseInteger(argv[2], m)
+        || !parseInteger(argv[3], p) || !parseInteger(argv[4], k)) {
         printUsage(argv[0]);
-        return fail("аргументы n, m и k должны быть целыми числами");
+        return fail("аргументы n, m, p и k должны быть целыми числами");
     }
-    if (nArgument <= 0 || m < 0 || k < 0 || k > 4) {
-        return fail("требуется n > 0, m >= 0 и 0 <= k <= 4");
+    if (nArgument <= 0 || m < 0 || p <= 0 || k < 0 || k > 4) {
+        return fail("требуется n > 0, m >= 0, p > 0 и 0 <= k <= 4");
     }
-    if ((k == 0 && argc != 5) || (k != 0 && argc != 4)) {
+    if ((k == 0 && argc != 6) || (k != 0 && argc != 5)) {
         printUsage(argv[0]);
         return fail("имя файла требуется только при k=0");
     }
@@ -69,7 +71,7 @@ int main(int argc, char* argv[]) {
         return fail("размер матрицы превышает максимально допустимый размер контейнера");
     }
 
-    const std::string filename = k == 0 ? argv[4] : std::string{};
+    const std::string filename = k == 0 ? argv[5] : std::string{};
     try {
         std::vector<double> matrix(elementCount);
         std::vector<double> inverse(elementCount);
@@ -85,7 +87,7 @@ int main(int argc, char* argv[]) {
         std::cout.flush();
 
         const auto start = std::chrono::steady_clock::now();
-        const InversionStatus status = invertMatrixFullPivot(n, matrix, inverse, columnPermutation);
+        const InversionStatus status = invertMatrixFullPivot(n, matrix, inverse, columnPermutation, p);
         const auto finish = std::chrono::steady_clock::now();
         const std::chrono::duration<double> elapsed = finish - start;
 
@@ -94,6 +96,9 @@ int main(int argc, char* argv[]) {
         }
         if (status == InversionStatus::numerical_failure) {
             return fail("численная ошибка при обращении матрицы");
+        }
+        if (status == InversionStatus::thread_failure) {
+            return fail("не удалось создать потоки");
         }
         if (status != InversionStatus::success) {
             return fail("некорректные размеры матриц для обращения");
@@ -108,8 +113,8 @@ int main(int argc, char* argv[]) {
         }
 
         double residual = 0.0;
-        if (!residualInfinityNorm(n, matrix, inverse, residual)) {
-            return fail("не удалось вычислить норму невязки из-за численной ошибки");
+        if (!residualInfinityNorm(n, matrix, inverse, p, residual)) {
+            return fail("не удалось вычислить норму невязки");
         }
 
         std::cout << "Норма невязки ||A*A^-1-I||_inf: " << std::scientific << residual << '\n';
