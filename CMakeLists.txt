@@ -5,6 +5,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(GAUSS_NATIVE "Optimize for the build CPU with floating-point contraction disabled" OFF)
+if(GAUSS_NATIVE)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$" AND NOT MSVC)
+        add_compile_options(-march=native -ffp-contract=off)
+    else()
+        message(FATAL_ERROR "GAUSS_NATIVE requires GCC or Clang with GNU-style options")
+    endif()
+endif()
+
 add_executable(program
     src/task.cpp
     src/matrices.cpp
@@ -19,6 +28,22 @@ target_include_directories(program PRIVATE include)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 target_link_libraries(program PRIVATE Threads::Threads)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(task_tests tests/task_tests.cpp src/task.cpp src/matrices.cpp)
+    target_include_directories(task_tests PRIVATE include)
+    target_link_libraries(task_tests PRIVATE Threads::Threads)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(task_tests PRIVATE -Wall -Wextra -Werror -pedantic)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            target_compile_definitions(task_tests PRIVATE GAUSS_TEST_CREATE_FAILURE)
+            target_link_options(task_tests PRIVATE "LINKER:--wrap=pthread_create")
+        endif()
+    endif()
+    add_test(NAME full_pivot_inverse COMMAND task_tests)
+    set_tests_properties(full_pivot_inverse PROPERTIES TIMEOUT 120)
+endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(program PRIVATE

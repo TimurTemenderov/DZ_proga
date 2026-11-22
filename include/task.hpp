@@ -11,6 +11,9 @@ enum class InversionStatus {
     thread_failure
 };
 
+// PAQ = LU с полным выбором на каждом шаге, затем блочное решение LY=I, UZ=Y.
+// matrix заменяется факторами L/U; inverse получает QZP в исходном порядке.
+// matrix и inverse должны быть разными буферами. threadCount включает вызывающий поток.
 InversionStatus invertMatrixFullPivot(
     std::size_t n,
     std::vector<double>& matrix,
