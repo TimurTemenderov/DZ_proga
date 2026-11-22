@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 project(gaussinversefullpivot14 LANGUAGES CXX)
 
+# Используем стандартный C++17 без расширений синтаксиса компилятора.
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Дополнительный режим для процессора сборки с раздельным округлением операций.
 option(GAUSS_NATIVE "Optimize for the build CPU with floating-point contraction disabled" OFF)
 if(GAUSS_NATIVE)
     if(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$" AND NOT MSVC)
@@ -14,6 +16,7 @@ if(GAUSS_NATIVE)
     endif()
 endif()
 
+# Основная программа включает обращение, подготовку данных, вывод и невязку.
 add_executable(program
     src/task.cpp
     src/matrices.cpp
@@ -25,10 +28,12 @@ add_executable(program
 
 target_include_directories(program PRIVATE include)
 
+# Threads::Threads передаёт нужные компилятору и линкеру параметры pthread.
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 target_link_libraries(program PRIVATE Threads::Threads)
 
+# Тест проверяет алгоритм напрямую, без разборщика командной строки.
 include(CTest)
 if(BUILD_TESTING)
     add_executable(task_tests tests/task_tests.cpp src/task.cpp src/matrices.cpp)
@@ -37,14 +42,17 @@ if(BUILD_TESTING)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         target_compile_options(task_tests PRIVATE -Wall -Wextra -Werror -pedantic)
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            # Перехватываем pthread_create только в тестах для имитации отказа.
             target_compile_definitions(task_tests PRIVATE GAUSS_TEST_CREATE_FAILURE)
             target_link_options(task_tests PRIVATE "LINKER:--wrap=pthread_create")
         endif()
     endif()
     add_test(NAME full_pivot_inverse COMMAND task_tests)
+    # Ограничиваем время теста, чтобы обнаружить зависание на барьере.
     set_tests_properties(full_pivot_inverse PROPERTIES TIMEOUT 120)
 endif()
 
+# Предупреждения считаются ошибками. Для GCC также заданы лимиты встраивания.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(program PRIVATE
         -W

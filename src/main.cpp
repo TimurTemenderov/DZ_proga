@@ -17,6 +17,7 @@
 
 namespace {
 
+// Принимаем целое число только при полном разборе аргумента.
 bool parseInteger(const char* text, int& value) {
     const char* end = text;
     while (*end != '\0') {
@@ -26,11 +27,13 @@ bool parseInteger(const char* text, int& value) {
     return result.ec == std::errc{} && result.ptr == end;
 }
 
+// n — порядок матрицы, m — ограничение печати, p — число потоков, k — источник.
 void printUsage(const char* executable) {
     std::cerr << "Использование: " << executable << " n m p k [filename]\n";
     std::cerr << "p - число потоков; для k=0 требуется файл с матрицей; для k=1..4 используется формула.\n";
 }
 
+// Единый формат ошибки и ненулевой код завершения для командной строки.
 int fail(const std::string& message) {
     std::cerr << "Ошибка: " << message << '\n';
     return 1;
@@ -38,6 +41,7 @@ int fail(const std::string& message) {
 
 }
 
+// Управляет этапами программы. Чтение, генерация и печать идут в главном потоке.
 int main(int argc, char* argv[]) {
     if (argc < 5 || argc > 6) {
         printUsage(argv[0]);
@@ -62,6 +66,7 @@ int main(int argc, char* argv[]) {
     }
 
     const std::size_t n = static_cast<std::size_t>(nArgument);
+    // Сначала проверяем арифметику размера, затем предел самого контейнера.
     if (n > std::numeric_limits<std::size_t>::max() / n) {
         return fail("размер n*n превышает допустимый размер контейнера");
     }
@@ -86,6 +91,7 @@ int main(int argc, char* argv[]) {
         printMatrix(matrix, n, n, m);
         std::cout.flush();
 
+        // Замер включает только вызов обращения, в том числе запуск его потоков.
         const auto start = std::chrono::steady_clock::now();
         const InversionStatus status = invertMatrixFullPivot(n, matrix, inverse, columnPermutation, p);
         const auto finish = std::chrono::steady_clock::now();
@@ -108,10 +114,13 @@ int main(int argc, char* argv[]) {
         printMatrix(inverse, n, n, m);
         std::cout.flush();
 
+        // При обращении буфер matrix заняли факторы L/U. Для невязки нужна
+        // исходная A, поэтому восстанавливаем её из того же источника.
         if (!initializeMatrix(nArgument, k, filename, matrix, error)) {
             return fail(error);
         }
 
+        // Невязка тоже вычисляется по потокам, уже за пределами замера обращения.
         double residual = 0.0;
         if (!residualInfinityNorm(n, matrix, inverse, p, residual)) {
             return fail("не удалось вычислить норму невязки");

@@ -16,6 +16,8 @@
 
 namespace {
 
+// Ширина полосы правых частей, высота блока подстановки и размер порции
+// строк исключения соответственно.
 constexpr std::size_t columnTileSize = 128;
 constexpr std::size_t solveBlockSize = 32;
 constexpr std::size_t eliminationChunkSize = 32;
@@ -28,6 +30,8 @@ struct alignas(64) PivotCandidate {
     bool failed = false;
 };
 
+// Общее состояние одного обращения. Кандидатов и строки фактора потоки
+// записывают раздельно, а границы шагов синхронизирует барьер.
 struct SharedData {
     std::size_t n = 0;
     std::size_t threadCount = 0;
@@ -49,6 +53,7 @@ struct SharedData {
     InversionStatus status = InversionStatus::success;
 };
 
+// Собственная рабочая полоса правых частей и признак ошибки каждого потока.
 struct ThreadArgs {
     SharedData* data = nullptr;
     std::size_t id = 0;
@@ -57,6 +62,7 @@ struct ThreadArgs {
     bool failed = false;
 };
 
+// Делит [first, last) на соседние диапазоны, различающиеся не более чем на один элемент.
 void threadRange(
     std::size_t first,
     std::size_t last,
@@ -70,6 +76,7 @@ void threadRange(
     end = first + length * (id + 1) / threadCount;
 }
 
+// Меняем строки целиком, включая уже сохранённые множители L.
 void swapRows(double* matrix, std::size_t n, std::size_t first, std::size_t second) {
     double* firstRow = matrix + first * n;
     double* secondRow = matrix + second * n;
@@ -78,6 +85,7 @@ void swapRows(double* matrix, std::size_t n, std::size_t first, std::size_t seco
     }
 }
 
+// Ищет максимум модуля в активной части строки, используя независимые накопители.
 double rowMaxMagnitude(const double* row, std::size_t first, std::size_t n) {
     double max0 = 0.0;
     double max1 = 0.0;
@@ -153,6 +161,8 @@ void selectPivot(SharedData& data, std::size_t k) {
         }
     }
     if (k == 0) {
+        // Первый глобальный максимум задаёт масштаб исходной матрицы.
+        // Относительный к нему порог применяется на всех последующих шагах.
         data.tolerance = 16.0 * std::numeric_limits<double>::epsilon()
             * static_cast<double>(n) * best.magnitude;
     }
@@ -248,6 +258,7 @@ void updateRows(const SharedData& data, std::size_t k, std::size_t begin,
             row[j] = value;
             max0 = std::max(max0, std::abs(value));
         }
+        // Ниже диагонали храним множители L, диагональ L подразумевается единичной.
         row[k] = multiplier;
         const double rowMax = std::max(std::max(max0, max1), std::max(max2, max3));
         if (!updateCandidate(row, i, k + 1, n, rowMax, candidate)) {
@@ -256,6 +267,7 @@ void updateRows(const SharedData& data, std::size_t k, std::size_t begin,
     }
 }
 
+// Для заранее назначенного диапазона кандидат начинается с пустого состояния.
 PivotCandidate eliminateRows(const SharedData& data, std::size_t k, std::size_t begin, std::size_t end) {
     PivotCandidate candidate;
     updateRows(data, k, begin, end, candidate);
@@ -267,6 +279,8 @@ PivotCandidate eliminateRows(const SharedData& data, std::size_t k, std::size_t 
 PivotCandidate eliminateRowChunks(SharedData& data, std::size_t k) {
     PivotCandidate local;
     for (;;) {
+        // Атомарный счётчик выдаёт непересекающиеся порции. Ведущую строку
+        // потоки уже увидели через барьер, поэтому достаточно relaxed.
         const std::size_t begin = data.nextRow.fetch_add(eliminationChunkSize, std::memory_order_relaxed);
         if (begin >= data.n) {
             return local;
@@ -283,6 +297,7 @@ PivotCandidate eliminateRowChunks(SharedData& data, std::size_t k) {
 
 // Вклад решённого блока [first, last) вычитается из строк [begin, end).
 // Четыре строки-приёмника используют одну загрузку каждого элемента блока.
+// Факторы хранятся со шагом n, а локальная полоса правых частей — со шагом stride.
 void subtractSolvedBlock(
     const SharedData& data,
     double* rhs,
@@ -357,6 +372,7 @@ void forwardSubstitution(const SharedData& data, double* rhs, std::size_t stride
 }
 
 // U Z = Y. Каждый поток независимо решает системы для своих столбцов Z.
+// Внутри полосы идём по блокам снизу вверх: верхние строки зависят от нижних.
 void backSubstitution(const SharedData& data, double* rhs, std::size_t stride, std::size_t width) {
     const std::size_t n = data.n;
     std::size_t last = n;
@@ -398,12 +414,15 @@ void solveInverseColumns(ThreadArgs& args) {
         std::size_t last = 0;
         threadRange(0, n, data.columnTileCount, tile, first, last);
         const std::size_t width = last - first;
+        // Переиспользуем буфер, заново подготавливая нужные столбцы единичной матрицы.
         std::fill(args.rightHandSides.begin(), args.rightHandSides.end(), 0.0);
         for (std::size_t j = 0; j < width; ++j) {
             rhs[(first + j) * stride + j] = 1.0;
         }
         forwardSubstitution(data, rhs, stride, first, width);
         backSubstitution(data, rhs, stride, width);
+        // P задаёт выходные столбцы, Q — выходные строки. Смежные столбцы
+        // можно скопировать подряд, для остальных используем отдельные индексы.
         const std::size_t* outputColumns = data.rowPermutation + first;
         const std::size_t firstOutputColumn = outputColumns[0];
         bool consecutive = true;
@@ -433,10 +452,13 @@ void solveInverseColumns(ThreadArgs& args) {
     }
 }
 
+// Один и тот же рабочий поток участвует в исключении и затем решает свои полосы.
 void* invertThread(void* argument) {
     ThreadArgs& args = *static_cast<ThreadArgs*>(argument);
     SharedData& data = *args.data;
     if (data.threadCount > 1) {
+        // Рабочие потоки ждут результата запуска всей группы, чтобы при
+        // частичном отказе никто не зашёл на барьер с неполным составом.
         pthread_mutex_lock(&data.startMutex);
         const bool startFailed = data.startFailed;
         pthread_mutex_unlock(&data.startMutex);
@@ -494,6 +516,8 @@ InversionStatus invertMatrixFullPivot(
         || columnPermutation.size() != n || matrix.data() == inverse.data()) {
         return InversionStatus::invalid_input;
     }
+    // Ограничиваем число потоков числом строк. До первого выбора
+    // обе перестановки тождественные.
     const std::size_t p = std::min(static_cast<std::size_t>(threadCount), n);
     std::vector<std::size_t> rowPermutation(n);
     for (std::size_t i = 0; i < n; ++i) {
@@ -515,6 +539,7 @@ InversionStatus invertMatrixFullPivot(
     std::vector<ThreadArgs> args(p);
     std::vector<pthread_t> threads(p - 1);
     const std::size_t width = 1 + (n - 1) / data.columnTileCount;
+    // Округляем шаг до кратного восьми элементам для блочной обработки.
     const std::size_t stride = (width + 7) / 8 * 8;
     for (std::size_t t = 0; t < p; ++t) {
         args[t].data = &data;

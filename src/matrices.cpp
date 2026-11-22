@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <limits>
 
+// Формулы используют индексы от 1 до n. Формула k=4 задаёт матрицу Гильберта.
 double matrixElement(int k, int n, int i, int j) {
     switch (k) {
     case 1:
@@ -20,6 +21,7 @@ double matrixElement(int k, int n, int i, int j) {
     }
 }
 
+// Последовательно заполняет подготовленный буфер без выделения памяти.
 bool fillMatrixByFormula(int n, int k, double* matrix, std::size_t elementCount) {
     if (n <= 0 || k < 1 || k > 4 || matrix == nullptr) {
         return false;
@@ -37,6 +39,7 @@ bool fillMatrixByFormula(int n, int k, double* matrix, std::size_t elementCount)
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j < n; ++j) {
             const std::size_t index = static_cast<std::size_t>(i) * dimension + static_cast<std::size_t>(j);
+            // В буфере индексы нулевые, в формуле индексы начинаются с единицы.
             matrix[index] = matrixElement(k, n, i + 1, j + 1);
         }
     }

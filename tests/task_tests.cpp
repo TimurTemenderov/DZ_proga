@@ -13,6 +13,8 @@
 #include <vector>
 
 #ifdef GAUSS_TEST_CREATE_FAILURE
+// Линкер перенаправляет вызовы pthread_create в обёртку. Она возвращает ошибку
+// на выбранной попытке, а остальные вызовы передаёт настоящей функции.
 #include <cerrno>
 #include <pthread.h>
 
@@ -33,6 +35,7 @@ extern "C" int __wrap_pthread_create(pthread_t* thread, const pthread_attr_t* at
 
 namespace {
 
+// Исключение останавливает тест и передаёт описание нарушенного условия в main.
 void require(bool condition, const std::string& message) {
     if (!condition) {
         throw std::runtime_error(message);
@@ -61,6 +64,7 @@ void referenceFactorization(std::size_t n, std::vector<double>& a,
             }
         }
         require(maximum > 0.0, "singular reference input");
+        // Переносим максимум на диагональ и сохраняем обе перестановки.
         for (std::size_t j = 0; j < n; ++j) {
             std::swap(a[k * n + j], a[pivotRow * n + j]);
         }
@@ -78,6 +82,7 @@ void referenceFactorization(std::size_t n, std::vector<double>& a,
     }
 }
 
+// Независимый последовательный расчёт невязки с накоплением в long double.
 double residual(std::size_t n, const std::vector<double>& left, const std::vector<double>& right) {
     double norm = 0.0;
     for (std::size_t i = 0; i < n; ++i) {
@@ -94,6 +99,8 @@ double residual(std::size_t n, const std::vector<double>& left, const std::vecto
     return norm;
 }
 
+// Воспроизводимая матрица с усиленной диагональю и независимо перемешанными
+// строками и столбцами. Это даёт обратимый тест с обеими перестановками.
 std::vector<double> randomMatrix(std::size_t n, unsigned seed) {
     std::mt19937 generator(seed);
     std::uniform_real_distribution<double> value(-1.0, 1.0);
@@ -111,6 +118,7 @@ std::vector<double> randomMatrix(std::size_t n, unsigned seed) {
     return a;
 }
 
+// Сравниваем результат каждого числа потоков с одним и тем же эталоном.
 void checkInverse(std::size_t n, const std::vector<double>& original,
     const std::vector<int>& threadCounts, double tolerance = 1e-10) {
     std::vector<double> reference = original;
@@ -118,6 +126,7 @@ void checkInverse(std::size_t n, const std::vector<double>& original,
     referenceFactorization(n, reference, rows, columns);
     for (int threads : threadCounts) {
         std::vector<double> factors = original;
+        // NaN помогает обнаружить элементы ответа, которые остались незаписанными.
         std::vector<double> inverse(n * n, std::numeric_limits<double>::quiet_NaN());
         std::vector<std::size_t> permutation(n);
         const std::string label = "n=" + std::to_string(n) + " p=" + std::to_string(threads);
@@ -135,6 +144,7 @@ void checkInverse(std::size_t n, const std::vector<double>& original,
     }
 }
 
+// Проверяем статусы для вырожденности, нечисловых результатов и ошибок входа.
 void checkFailures() {
     const double infinity = std::numeric_limits<double>::infinity();
     const double nan = std::numeric_limits<double>::quiet_NaN();
@@ -157,6 +167,7 @@ void checkFailures() {
                 == InversionStatus::numerical_failure, "nonfinite input/result accepted");
         }
         auto a = randomMatrix(65, 42);
+        // Повторяющаяся строка даёт вырожденность уже после начала исключения.
         std::copy_n(a.data(), 65, a.data() + 64 * 65);
         std::vector<double> inverse(a.size());
         std::vector<std::size_t> permutation(65);
@@ -179,6 +190,7 @@ void checkFailures() {
         == InversionStatus::invalid_input, "aliased buffers accepted");
 }
 
+// Проверяем отказ до старта всех рабочих потоков и при частично созданной группе.
 void checkThreadCreationFailure() {
 #ifdef GAUSS_TEST_CREATE_FAILURE
     for (int failure = 0; failure < 3; ++failure) {
@@ -197,6 +209,7 @@ void checkThreadCreationFailure() {
 
 }
 
+// Набор охватывает малые размеры, границы порций и блоков, формулы и ошибки.
 int main() {
     try {
         checkInverse(1, {2}, {1, 2, 4});

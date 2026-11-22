@@ -5,6 +5,8 @@
 #include <cstddef>
 #include <limits>
 
+// Печать идёт в вызывающем потоке. Ограничиваем обе оси, а смещение
+// в буфере вычисляем по исходной ширине строки.
 void printMatrix(const std::vector<double>& matrix, std::size_t rows, std::size_t columns, int maxDimension) {
     if (maxDimension <= 0 || columns == 0) {
         return;

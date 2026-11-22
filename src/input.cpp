@@ -9,6 +9,8 @@
 #include <limits>
 #include <string>
 
+// Файл содержит числа, разделённые пробельными символами. Переносы строк
+// произвольны, поскольку границы строк матрицы определяет размер n.
 bool readMatrixFromFile(int n, const std::string& filename, std::vector<double>& matrix, std::string& error) {
     if (n <= 0) {
         error = "Размер матрицы должен быть положительным";
@@ -16,6 +18,7 @@ bool readMatrixFromFile(int n, const std::string& filename, std::vector<double>&
     }
 
     const std::size_t dimension = static_cast<std::size_t>(n);
+    // Проверяем переполнение до вычисления n*n.
     if (dimension > std::numeric_limits<std::size_t>::max() / dimension) {
         error = "Размер матрицы слишком велик";
         return false;
@@ -45,6 +48,7 @@ bool readMatrixFromFile(int n, const std::string& filename, std::vector<double>&
 
         char* end = nullptr;
         const double value = std::strtod(token.c_str(), &end);
+        // Принимаем только токен, который разобран целиком и дал конечное число.
         if (end == token.c_str() || *end != '\0' || !std::isfinite(value)) {
             error = "В файле " + filename + " встретилось значение неверного формата: " + token;
             return false;
@@ -52,6 +56,7 @@ bool readMatrixFromFile(int n, const std::string& filename, std::vector<double>&
         matrix[index] = value;
     }
 
+    // После последнего элемента в файле допустимы только пробельные символы.
     std::string extraToken;
     if (input >> extraToken) {
         error = "В файле " + filename + " больше " + std::to_string(expectedCount) + " элементов";
@@ -64,6 +69,7 @@ bool readMatrixFromFile(int n, const std::string& filename, std::vector<double>&
     return true;
 }
 
+// Общая точка входа для чтения и генерации матрицы. Буфер выделяет вызывающий код.
 bool initializeMatrix(int n, int k, const std::string& filename, std::vector<double>& matrix, std::string& error) {
     if (k == 0) {
         return readMatrixFromFile(n, filename, matrix, error);

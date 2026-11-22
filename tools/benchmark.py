@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 def main():
+    # Собираем набор запусков для указанных размеров, версий и числа потоков.
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("program", type=Path)
     parser.add_argument("--baseline", type=Path)
@@ -25,6 +26,7 @@ def main():
     if args.baseline:
         versions["baseline"] = args.baseline.resolve()
     results = []
+    # Один и тот же входной файл используется всеми сравниваемыми версиями.
     with tempfile.TemporaryDirectory(prefix="gauss-benchmark-") as directory:
         for n in args.sizes:
             matrix_args = [args.matrix]
@@ -52,6 +54,7 @@ def main():
                     command = [str(versions[version]), str(n), "0", str(p), *matrix_args]
                     run = subprocess.run(command, capture_output=True, text=True, encoding="utf-8",
                                          check=True, timeout=600)
+                    # Программа печатает невязку и время обращения в последних двух строках.
                     lines = run.stdout.splitlines()
                     seconds = float(lines[-1].split()[-2])
                     residual = float(lines[-2].rsplit(" ", 1)[-1])
@@ -61,6 +64,7 @@ def main():
                     residuals[version, p].append(residual)
                     print(f"sample {version:8} n={n} p={p} t={seconds:.6f}s "
                           f"residual={residual:.3e}", flush=True)
+            # Ускорение считаем относительно одного потока той же версии программы.
             for version, p in cases:
                 median = statistics.median(samples[version, p])
                 one_thread = statistics.median(samples[version, 1]) if 1 in args.threads else None
@@ -71,6 +75,7 @@ def main():
                     result.update(speedup=one_thread / median, efficiency=one_thread / median / p)
                 results.append(result)
                 print("result " + json.dumps(result), flush=True)
+    # Сохраняем и медианы, и отдельные измерения для проверки разброса.
     if args.json:
         args.json.write_text(json.dumps(results, indent=2), encoding="utf-8")
 

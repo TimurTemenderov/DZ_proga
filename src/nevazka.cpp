@@ -10,6 +10,8 @@
 
 namespace {
 
+// Один набор аргументов на поток. Матрицы общие и доступны только для чтения,
+// а диапазон строк, буфер произведения и локальная норма принадлежат потоку.
 struct ResidualArgs {
     std::size_t n = 0;
     std::size_t firstRow = 0;
@@ -21,6 +23,7 @@ struct ResidualArgs {
     bool failed = false;
 };
 
+// Вычисляет максимум абсолютных сумм строк A*A^-1-I в диапазоне [firstRow, lastRow).
 void* residualThread(void* argument) {
     ResidualArgs& args = *static_cast<ResidualArgs*>(argument);
     const std::size_t n = args.n;
@@ -30,6 +33,8 @@ void* residualThread(void* argument) {
         const double* originalRow = args.original + i * n;
         std::fill(productRow.begin(), productRow.end(), 0.0);
 
+        // Строим одну строку произведения как сумму строк A^-1 с весами из A.
+        // Внутренний цикл читает строку A^-1 подряд.
         for (std::size_t k = 0; k < n; ++k) {
             const double coefficient = originalRow[k];
             const double* inverseRow = args.inverse + k * n;
@@ -45,6 +50,7 @@ void* residualThread(void* argument) {
                 return nullptr;
             }
 
+            // Единичная матрица меняет только диагональный элемент строки.
             const double residual = productRow[j] - (i == j ? 1.0 : 0.0);
             if (!std::isfinite(residual)) {
                 args.failed = true;
@@ -85,6 +91,7 @@ bool residualInfinityNorm(
     std::vector<ResidualArgs> args(p);
     std::vector<pthread_t> threads(p);
 
+    // Делим строки между рабочими потоками и заранее выделяем им буферы.
     for (std::size_t t = 0; t < p; ++t) {
         args[t].n = n;
         args[t].firstRow = n * t / p;
@@ -103,6 +110,7 @@ bool residualInfinityNorm(
         }
     }
 
+    // Дожидаемся всех запущенных потоков, даже если следующий создать не удалось.
     for (std::size_t t = 0; t < created; ++t) {
         pthread_join(threads[t], nullptr);
     }
@@ -110,6 +118,7 @@ bool residualInfinityNorm(
         return false;
     }
 
+    // После join вызывающий поток выбирает максимум из локальных норм.
     norm = 0.0;
     for (const ResidualArgs& current : args) {
         if (current.failed) {
